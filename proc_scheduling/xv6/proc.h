@@ -73,7 +73,7 @@ struct proc {
     uint stime; // sleep time
     uint retime; // ready time
     uint rutime; // run time
-    int procTick;
+    int procTick; //count tick
     int ticket;
 };
 

@@ -15,7 +15,7 @@ struct {
 static struct proc *initproc;
 
 int nextpid = 1;
-//int queueNum = 0;
+int queueNum = 0; //my code
 extern void forkret(void);
 extern void trapret(void);
 
@@ -27,7 +27,7 @@ pinit(void)
   initlock(&ptable.lock, "ptable");
 }
 
-//my code===========================================================>>>>>>>>>
+//mycode===========================================================>>>>>>>>>
 //return system time
 uint systemTime(void){
     return ticks;
@@ -60,8 +60,8 @@ found:
     //my code===========================================================>>>>>>>>>
     //set creation time
     p->ctime = systemTime();
-//    p->ticket = queueNum++;
-    //============================>>>>>
+    p->ticket = queueNum++;
+   
     
   // Allocate kernel stack
   if((p->kstack = kalloc()) == 0){
@@ -299,12 +299,12 @@ scheduler(void)
     // Enable interrupts on this processor.
     sti();
       
+#ifdef DEFAULT //default scheduling
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
           continue;
-
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
@@ -321,6 +321,68 @@ scheduler(void)
       proc = 0;
     }
     release(&ptable.lock);
+#endif
+      
+#ifdef FRR //round robin
+      acquire(&ptable.lock);
+      struct proc* minP = 0;
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+          if(p->state == RUNNABLE){
+              if(minP == 0)
+                  minP = p;
+              else{
+                  if(p->ticket < minP->ticket)
+                      minP = p;
+              }
+          }
+      }
+      if(minP != 0){
+          p = minP;
+          foundproc = 1;
+          proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+          p->procTick = 0;
+          swtch(&cpu->scheduler, proc->context);
+          switchkvm();
+          
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          proc = 0;
+      }
+      release(&ptable.lock);
+#endif
+   
+#ifdef FCFS //first come first served
+      // Loop over process table looking for process to run.
+      acquire(&ptable.lock);
+      struct proc* minP = 0;
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+          if(p->state == RUNNABLE){
+              if(minP == 0)
+                  minP = p;
+              else{
+                  if(p->ctime < minP->ctime)
+                      minP = p;
+              }
+          }
+      }
+      if(minP != 0){
+          p = minP;
+          foundproc = 1;
+          proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+          p->procTick = 0;
+          swtch(&cpu->scheduler, proc->context);
+          switchkvm();
+          
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          proc = 0;
+      }
+      release(&ptable.lock);
+#endif
 
   }
 }
@@ -349,10 +411,11 @@ sched(void)
 void
 yield(void)
 {
-  acquire(&ptable.lock);  //DOC: yieldlock
-  proc->state = RUNNABLE;
-  sched();
-  release(&ptable.lock);
+    acquire(&ptable.lock);  //DOC: yieldlock
+    proc->state = RUNNABLE;
+    proc->ticket = queueNum ++; //my code
+    sched();
+    release(&ptable.lock);
 }
 
 // A fork child's very first scheduling by scheduler()
@@ -422,7 +485,8 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan)
-      p->state = RUNNABLE;
+        p->state = RUNNABLE;
+        p->ticket = queueNum++; //my code
 }
 
 // Wake up all processes sleeping on chan.
@@ -516,8 +580,7 @@ void tickCounter(void){
 int wait_stat(int* wtime, int* rtime, int* iotime, int* status){
     struct proc *p;
     int havekids, pid;
-    
-    
+
     acquire(&ptable.lock);
     for(;;){
         havekids = 0;
@@ -557,7 +620,6 @@ int wait_stat(int* wtime, int* rtime, int* iotime, int* status){
             *status = -1;
             return -1;
         }
-        
         //go to sleep && wait for children to exit.
         sleep(proc, &ptable.lock);
     }
